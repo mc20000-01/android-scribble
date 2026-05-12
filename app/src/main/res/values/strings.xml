@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Android Scribble</string>
+    <string name="accessibility_description">Draw anywhere to recognize handwriting and inject text into the focused field.</string>
+</resources>
