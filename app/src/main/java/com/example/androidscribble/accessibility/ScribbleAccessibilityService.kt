@@ -4,12 +4,10 @@ import android.accessibilityservice.AccessibilityService
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Build
 import android.view.Gravity
 import android.view.MotionEvent
-import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.TextView
@@ -27,6 +25,8 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.example.androidscribble.R
 import com.example.androidscribble.ink.GestureClassifier
 import com.example.androidscribble.ink.InkContrastSampler
+import com.example.androidscribble.ink.MediaProjectionPermissionStore
+import com.example.androidscribble.ink.MediaProjectionScreenImageSource
 import com.example.androidscribble.ink.InkStroke
 import com.example.androidscribble.ink.ScribbleGesture
 import com.example.androidscribble.ml.CorrectionRepository
@@ -53,6 +53,7 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
     private lateinit var canvasView: ComposeView
     private lateinit var textInjector: TextInjector
     private lateinit var recognizer: ScribbleRecognizer
+    private lateinit var inkContrastSampler: InkContrastSampler
     private val pendingTextStrokes = mutableListOf<InkStroke>()
     private var pendingTextCommitJob: Job? = null
     private var writingMode = false
@@ -71,6 +72,7 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
         textInjector = TextInjector(this)
         recognizer = ScribbleRecognizer(CustomDictionary(this), CorrectionRepository(this))
         startForeground(NOTIFICATION_ID, keepAliveNotification())
+        inkContrastSampler = createInkContrastSampler()
         addCanvasOverlay()
         addTriggerButton()
         setWritingMode(false)
@@ -85,6 +87,7 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
         clearPendingTextStrokes()
         runCatching { windowManager.removeView(triggerView) }
         runCatching { windowManager.removeView(canvasView) }
+        if (::inkContrastSampler.isInitialized) inkContrastSampler.release()
         super.onDestroy()
     }
 
@@ -93,11 +96,20 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
             setViewTreeLifecycleOwner(this@ScribbleAccessibilityService)
             setViewTreeSavedStateRegistryOwner(this@ScribbleAccessibilityService)
             setContent {
-                ScribbleCanvasOverlay(inkContrastSampler = InkContrastSampler(), onStrokeFinished = ::handleStroke)
+                ScribbleCanvasOverlay(inkContrastSampler = inkContrastSampler, onStrokeFinished = ::handleStroke)
             }
         }
         windowManager.addView(canvasView, canvasLayoutParams(touchable = false))
     }
+
+
+    private fun createInkContrastSampler(): InkContrastSampler = InkContrastSampler(
+        screenImageSourceFactory = {
+            MediaProjectionPermissionStore.consume()?.let { grant ->
+                runCatching { MediaProjectionScreenImageSource(this, grant) }.getOrNull()
+            }
+        },
+    )
 
     private fun addTriggerButton() {
         triggerView = TextView(this).apply {

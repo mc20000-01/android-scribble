@@ -16,6 +16,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import kotlin.math.roundToInt
 import com.example.androidscribble.ink.ActiveStroke
 import com.example.androidscribble.ink.InkContrastSampler
 import com.example.androidscribble.ink.InkPoint
@@ -41,7 +42,13 @@ fun ScribbleCanvasOverlay(
                     val stroke = ActiveStroke()
                     val start = down.toInkPoint()
                     active.value = stroke
-                    inkContrastSampler.sampleFromWindow(null, down.position) { color -> stroke.color = color }
+                    val hostLocation = IntArray(2)
+                    hostView.getLocationOnScreen(hostLocation)
+                    val screenPoint = Offset(
+                        hostLocation[0] + down.position.x.roundToInt().toFloat(),
+                        hostLocation[1] + down.position.y.roundToInt().toFloat(),
+                    )
+                    inkContrastSampler.sampleFromScreen(screenPoint) { color -> stroke.color = color }
                     StrokeSmoother.begin(stroke, start)
                     down.consume()
                     while (true) {
