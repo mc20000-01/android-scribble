@@ -1,7 +1,13 @@
+# Local machine configuration
+local.properties
+
+# Android/Gradle build outputs
 .gradle/
 build/
-**/build/
-local.properties
-*.iml
-.idea/
-.DS_Store
+app/build/
+
+# Generated APK artifacts. Recreate them with scripts/build_android_artifacts.sh.
+builds/*.apk
+builds/*.apk.sha256
+builds/old/*.apk
+builds/old/*.apk.sha256

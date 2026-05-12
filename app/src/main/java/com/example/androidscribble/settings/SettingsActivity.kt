@@ -116,7 +116,7 @@ private fun SettingsScreen(
                     }
                 }
 
-                EmojiTrainingSection(settings, emojiTrainer)
+                EmojiTrainingSection(emojiTrainer)
 
                 Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Done") }
             }
@@ -152,7 +152,7 @@ private fun SliderSetting(label: String, value: Float, range: ClosedFloatingPoin
 }
 
 @Composable
-private fun EmojiTrainingSection(settings: ScribbleSettings, emojiTrainer: SymbolEmojiTrainer) {
+private fun EmojiTrainingSection(emojiTrainer: SymbolEmojiTrainer) {
     var label by remember { mutableStateOf("") }
     var emoji by remember { mutableStateOf("🙂") }
     var status by remember { mutableStateOf("Draw one sample below to train the current emoji template.") }
@@ -165,7 +165,6 @@ private fun EmojiTrainingSection(settings: ScribbleSettings, emojiTrainer: Symbo
         Card(Modifier.fillMaxWidth().height(220.dp)) {
             ScribbleCanvasOverlay(
                 modifier = Modifier.fillMaxSize(),
-                settings = settings.copy(gesturesEnabled = false, recognitionEnabled = false, keepRecentStrokes = 4),
                 inkContrastSampler = InkContrastSampler(),
             ) { stroke ->
                 emojiTrainer.train(label, emoji, listOf(stroke))

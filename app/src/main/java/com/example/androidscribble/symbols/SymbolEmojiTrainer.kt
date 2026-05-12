@@ -60,7 +60,7 @@ class SymbolEmojiTrainer(context: Context) {
         val minY = raw.minOf { it.y }
         val maxY = raw.maxOf { it.y }
         val scale = max(maxX - minX, maxY - minY).takeIf { it > 0f } ?: return emptyList()
-        val normalized = raw.map { TemplatePoint((it.x - minX) / scale, (it.y - minY) / scale, it.pressure) }
+        val normalized = raw.map { TemplatePoint((it.x - minX) / scale, (it.y - minY) / scale, 1f) }
         return normalized.resample(TEMPLATE_POINTS)
     }
 
