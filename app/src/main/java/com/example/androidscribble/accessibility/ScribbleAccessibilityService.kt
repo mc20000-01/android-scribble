@@ -34,7 +34,9 @@ import com.example.androidscribble.ml.ScribbleRecognizer
 import com.example.androidscribble.ui.ScribbleCanvasOverlay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, SavedStateRegistryOwner {
@@ -49,6 +51,8 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
     private lateinit var canvasView: ComposeView
     private lateinit var textInjector: TextInjector
     private lateinit var recognizer: ScribbleRecognizer
+    private val pendingTextStrokes = mutableListOf<InkStroke>()
+    private var pendingTextCommitJob: Job? = null
     private var writingMode = false
 
     override fun onCreate() {
@@ -75,6 +79,7 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
 
     override fun onDestroy() {
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+        clearPendingTextStrokes()
         runCatching { windowManager.removeView(triggerView) }
         runCatching { windowManager.removeView(canvasView) }
         super.onDestroy()
@@ -139,13 +144,47 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
 
     private fun handleStroke(stroke: InkStroke) {
         when (GestureClassifier.classify(stroke)) {
-            ScribbleGesture.ScratchDelete -> textInjector.scratchDeleteWord()
-            ScribbleGesture.CircleSelect -> textInjector.selectWordNearCursor()
-            ScribbleGesture.VerticalSlash -> textInjector.insertSpace()
-            ScribbleGesture.Text -> serviceScope.launch {
-                recognizer.recognize(listOf(stroke))?.let { textInjector.insertText(it) }
+            ScribbleGesture.ScratchDelete -> {
+                clearPendingTextStrokes()
+                textInjector.scratchDeleteWord()
+            }
+            ScribbleGesture.CircleSelect -> {
+                clearPendingTextStrokes()
+                textInjector.selectWordNearCursor()
+            }
+            ScribbleGesture.VerticalSlash -> {
+                clearPendingTextStrokes()
+                textInjector.insertSpace()
+            }
+            ScribbleGesture.Text -> {
+                pendingTextStrokes += stroke
+                schedulePendingTextCommit()
             }
         }
+    }
+
+    private fun schedulePendingTextCommit() {
+        pendingTextCommitJob?.cancel()
+        pendingTextCommitJob = serviceScope.launch {
+            delay(TEXT_STROKE_DEBOUNCE_MS)
+            commitPendingTextStrokes()
+        }
+    }
+
+    private suspend fun commitPendingTextStrokes() {
+        val strokesToRecognize = pendingTextStrokes.toList()
+        if (strokesToRecognize.isEmpty()) return
+
+        recognizer.recognize(strokesToRecognize)?.let { recognizedText ->
+            textInjector.insertText(recognizedText)
+            pendingTextStrokes.clear()
+        }
+    }
+
+    private fun clearPendingTextStrokes() {
+        pendingTextCommitJob?.cancel()
+        pendingTextCommitJob = null
+        pendingTextStrokes.clear()
     }
 
     private fun canvasLayoutParams(touchable: Boolean) = WindowManager.LayoutParams(
@@ -189,5 +228,6 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
     private companion object {
         const val CHANNEL_ID = "scribble_keep_alive"
         const val NOTIFICATION_ID = 1842
+        const val TEXT_STROKE_DEBOUNCE_MS = 800L
     }
 }
