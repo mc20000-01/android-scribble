@@ -33,4 +33,9 @@ dependencies {
     implementation("androidx.savedstate:savedstate-ktx:1.3.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("org.json:json:20240303")
 }
