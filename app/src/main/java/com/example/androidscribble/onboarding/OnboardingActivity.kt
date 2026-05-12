@@ -2,11 +2,15 @@ package com.example.androidscribble.onboarding
 
 import android.Manifest
 import android.app.Activity
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -25,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,7 +38,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.example.androidscribble.accessibility.ScribbleAccessibilityService
 import com.example.androidscribble.ink.MediaProjectionPermissionStore
 import com.example.androidscribble.ml.CorrectionRepository
 import com.example.androidscribble.ml.CustomDictionary
@@ -49,15 +58,35 @@ class OnboardingActivity : ComponentActivity() {
 }
 
 @Composable
-private fun OnboardingScreen(activity: Activity) {
-    val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+private fun OnboardingScreen(activity: ComponentActivity) {
+    var permissionRefreshKey by remember { mutableStateOf(0) }
+    var isScreenCaptureGranted by remember { mutableStateOf(false) }
+    val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        permissionRefreshKey++
+    }
     val mediaProjectionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         MediaProjectionPermissionStore.update(result.resultCode, result.data)
+        isScreenCaptureGranted = result.resultCode == Activity.RESULT_OK && result.data != null
     }
     val recognizer = remember(activity) { ScribbleRecognizer(CustomDictionary(activity), CorrectionRepository(activity)) }
     val coroutineScope = rememberCoroutineScope()
     var modelStatus by remember { mutableStateOf("Checking handwriting recognition model…") }
     var isModelDownloading by remember { mutableStateOf(false) }
+
+    DisposableEffect(activity) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                permissionRefreshKey++
+            }
+        }
+        activity.lifecycle.addObserver(observer)
+        onDispose { activity.lifecycle.removeObserver(observer) }
+    }
+
+    val isAccessibilityGranted = remember(permissionRefreshKey, activity) { isAccessibilityServiceEnabled(activity) }
+    val isOverlayGranted = remember(permissionRefreshKey, activity) { isOverlayPermissionGranted(activity) }
+    val isBatteryOptimizationGranted = remember(permissionRefreshKey, activity) { isIgnoringBatteryOptimizations(activity) }
+    val isNotificationGranted = remember(permissionRefreshKey, activity) { isNotificationPermissionGranted(activity) }
 
     fun downloadModel() {
         if (isModelDownloading) return
@@ -90,23 +119,43 @@ private fun OnboardingScreen(activity: Activity) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("Android Scribble", style = MaterialTheme.typography.headlineMedium)
                 Text("Enable the permissions below so the floating canvas can recognize handwriting and inject text into any focused field.")
-                PermissionCard("1. Accessibility Service", "Primary service for gestures and text injection.") {
+                PermissionCard(
+                    title = "1. Accessibility Service",
+                    description = "Primary service for gestures and text injection.",
+                    isGranted = isAccessibilityGranted,
+                ) {
                     activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 }
-                PermissionCard("2. Display Over Other Apps", "Required for the trigger and handwriting canvas overlay.") {
+                PermissionCard(
+                    title = "2. Display Over Other Apps",
+                    description = "Required for the trigger and handwriting canvas overlay.",
+                    isGranted = isOverlayGranted,
+                ) {
                     activity.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${activity.packageName}")))
                 }
-                PermissionCard("3. Screen capture", "Optional, in-memory screen sampling for dynamic ink contrast while Android Scribble remains running.") {
+                PermissionCard(
+                    title = "3. Screen capture",
+                    description = "Optional, in-memory screen sampling for dynamic ink contrast while Android Scribble remains running.",
+                    isGranted = isScreenCaptureGranted,
+                ) {
                     val manager = activity.getSystemService<MediaProjectionManager>()
                     manager?.createScreenCaptureIntent()?.let { mediaProjectionLauncher.launch(it) }
                 }
-                PermissionCard("4. Ignore Battery Optimizations", "Helps keep the handwriting service alive.") {
+                PermissionCard(
+                    title = "4. Ignore Battery Optimizations",
+                    description = "Helps keep the handwriting service alive.",
+                    isGranted = isBatteryOptimizationGranted,
+                ) {
                     val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
                         .setData(Uri.parse("package:${activity.packageName}"))
                     activity.startActivity(intent)
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    PermissionCard("5. Notifications", "Shows the keep-alive foreground notification.") {
+                    PermissionCard(
+                        title = "5. Notifications",
+                        description = "Shows the keep-alive foreground notification.",
+                        isGranted = isNotificationGranted,
+                    ) {
                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
@@ -115,7 +164,7 @@ private fun OnboardingScreen(activity: Activity) {
                     isDownloading = isModelDownloading,
                     onDownloadClick = ::downloadModel,
                 )
-                PermissionCard("Custom terms and corrections", "Teach Android Scribble your vocabulary and review saved correction examples.") {
+                ActionCard("Custom terms and corrections", "Teach Android Scribble your vocabulary and review saved correction examples.") {
                     activity.startActivity(Intent(activity, LearningActivity::class.java))
                 }
                 Spacer(Modifier.height(8.dp))
@@ -126,7 +175,25 @@ private fun OnboardingScreen(activity: Activity) {
 }
 
 @Composable
-private fun PermissionCard(title: String, description: String, onClick: () -> Unit) {
+private fun PermissionCard(title: String, description: String, isGranted: Boolean, onClick: () -> Unit) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(if (isGranted) "Status: Granted" else "Status: Needs setup", style = MaterialTheme.typography.labelLarge)
+            Text(description, style = MaterialTheme.typography.bodyMedium)
+            Button(
+                onClick = onClick,
+                enabled = !isGranted,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (isGranted) "Granted" else "Open setup")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActionCard(title: String, description: String, onClick: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
@@ -151,4 +218,29 @@ private fun ModelDownloadCard(status: String, isDownloading: Boolean, onDownload
             }
         }
     }
+}
+
+private fun isOverlayPermissionGranted(activity: Activity): Boolean = Settings.canDrawOverlays(activity)
+
+private fun isNotificationPermissionGranted(context: Context): Boolean {
+    return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun isAccessibilityServiceEnabled(context: Context): Boolean {
+    val expectedComponentName = ComponentName(context, ScribbleAccessibilityService::class.java)
+    val enabledServices = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+    ).orEmpty()
+
+    return enabledServices
+        .split(':')
+        .mapNotNull(ComponentName::unflattenFromString)
+        .any { it == expectedComponentName }
+}
+
+private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+    val powerManager = context.getSystemService<PowerManager>() ?: return false
+    return powerManager.isIgnoringBatteryOptimizations(context.packageName)
 }
