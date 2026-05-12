@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.getSystemService
+import com.example.androidscribble.settings.LearningActivity
 
 class OnboardingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,6 +66,9 @@ private fun OnboardingScreen(activity: Activity) {
                     PermissionCard("5. Notifications", "Shows the keep-alive foreground notification.") {
                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
+                }
+                PermissionCard("Custom terms and corrections", "Teach Android Scribble your vocabulary and review saved correction examples.") {
+                    activity.startActivity(Intent(activity, LearningActivity::class.java))
                 }
                 Spacer(Modifier.height(8.dp))
                 Text("After enabling Accessibility, tap the floating pen. Dimmed means pass-through mode; bright means writing mode is intercepting strokes.")
