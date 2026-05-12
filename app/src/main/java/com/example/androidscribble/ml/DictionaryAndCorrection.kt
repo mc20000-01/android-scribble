@@ -57,7 +57,7 @@ class CorrectionRepository(context: Context) {
     }
 
     private fun serialize(strokes: List<InkStroke>): String = JSONArray(strokes.map { stroke ->
-        JSONArray(stroke.points.map { point -> JSONArray(listOf(point.x, point.y, point.t, point.pressure)) })
+        JSONArray(stroke.points.map { point -> JSONArray(listOf(point.x, point.y, point.t)) })
     }).toString()
 
     private companion object { const val KEY_EXAMPLES = "examples" }

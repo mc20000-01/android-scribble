@@ -14,10 +14,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.AndroidScribble">
         <activity
-            android:name=".settings.SettingsActivity"
-            android:exported="false" />
-
-        <activity
             android:name=".onboarding.OnboardingActivity"
             android:exported="true">
             <intent-filter>

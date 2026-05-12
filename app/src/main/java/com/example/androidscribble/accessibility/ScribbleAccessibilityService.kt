@@ -5,7 +5,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
 import android.view.Gravity
@@ -14,7 +13,6 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.TextView
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.Lifecycle
@@ -33,10 +31,6 @@ import com.example.androidscribble.ink.ScribbleGesture
 import com.example.androidscribble.ml.CorrectionRepository
 import com.example.androidscribble.ml.CustomDictionary
 import com.example.androidscribble.ml.ScribbleRecognizer
-import com.example.androidscribble.settings.SettingsActivity
-import com.example.androidscribble.settings.SettingsRepository
-import com.example.androidscribble.settings.ScribbleSettings
-import com.example.androidscribble.symbols.SymbolEmojiTrainer
 import com.example.androidscribble.ui.ScribbleCanvasOverlay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -55,9 +49,6 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
     private lateinit var canvasView: ComposeView
     private lateinit var textInjector: TextInjector
     private lateinit var recognizer: ScribbleRecognizer
-    private lateinit var settingsRepository: SettingsRepository
-    private lateinit var emojiTrainer: SymbolEmojiTrainer
-    private val settingsState = mutableStateOf(ScribbleSettings())
     private var writingMode = false
 
     override fun onCreate() {
@@ -72,9 +63,6 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
         lifecycleRegistry.currentState = Lifecycle.State.STARTED
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         textInjector = TextInjector(this)
-        settingsRepository = SettingsRepository(this)
-        settingsState.value = settingsRepository.load()
-        emojiTrainer = SymbolEmojiTrainer(this)
         recognizer = ScribbleRecognizer(CustomDictionary(this), CorrectionRepository(this))
         startForeground(NOTIFICATION_ID, keepAliveNotification())
         addCanvasOverlay()
@@ -97,7 +85,7 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
             setViewTreeLifecycleOwner(this@ScribbleAccessibilityService)
             setViewTreeSavedStateRegistryOwner(this@ScribbleAccessibilityService)
             setContent {
-                ScribbleCanvasOverlay(settings = settingsState.value, inkContrastSampler = InkContrastSampler(), onStrokeFinished = ::handleStroke)
+                ScribbleCanvasOverlay(inkContrastSampler = InkContrastSampler(), onStrokeFinished = ::handleStroke)
             }
         }
         windowManager.addView(canvasView, canvasLayoutParams(touchable = false))
@@ -117,10 +105,6 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
         var downY = 0f
         var startX = 0
         var startY = 0
-        triggerView.setOnLongClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            true
-        }
         triggerView.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -138,7 +122,7 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
                 }
                 MotionEvent.ACTION_UP -> {
                     val moved = kotlin.math.hypot((event.rawX - downX).toDouble(), (event.rawY - downY).toDouble())
-                    if (moved < settingsState.value.tapSlopPx) setWritingMode(!writingMode)
+                    if (moved < 12.0) setWritingMode(!writingMode)
                     true
                 }
                 else -> false
@@ -149,34 +133,16 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
 
     private fun setWritingMode(enabled: Boolean) {
         writingMode = enabled
-        settingsState.value = settingsRepository.load()
-        triggerView.alpha = if (enabled) 1f else settingsState.value.triggerInactiveAlpha
-        (triggerView.layoutParams as? WindowManager.LayoutParams)?.let { params ->
-            params.width = settingsState.value.triggerSizeDp.dp
-            params.height = settingsState.value.triggerSizeDp.dp
-            windowManager.updateViewLayout(triggerView, params)
-        }
+        triggerView.alpha = if (enabled) 1f else 0.58f
         windowManager.updateViewLayout(canvasView, canvasLayoutParams(touchable = enabled))
     }
 
     private fun handleStroke(stroke: InkStroke) {
-        val currentSettings = settingsRepository.load()
-        if (currentSettings.gesturesEnabled) {
-            when (GestureClassifier.classify(stroke)) {
-                ScribbleGesture.ScratchDelete -> { textInjector.scratchDeleteWord(); return }
-                ScribbleGesture.CircleSelect -> { textInjector.selectWordNearCursor(); return }
-                ScribbleGesture.VerticalSlash -> { textInjector.insertSpace(); return }
-                ScribbleGesture.Text -> Unit
-            }
-        }
-        if (currentSettings.emojiTrainingEnabled) {
-            emojiTrainer.match(listOf(stroke), currentSettings.emojiMatchThreshold)?.let { match ->
-                textInjector.insertText(match.emoji)
-                return
-            }
-        }
-        if (currentSettings.recognitionEnabled) {
-            serviceScope.launch {
+        when (GestureClassifier.classify(stroke)) {
+            ScribbleGesture.ScratchDelete -> textInjector.scratchDeleteWord()
+            ScribbleGesture.CircleSelect -> textInjector.selectWordNearCursor()
+            ScribbleGesture.VerticalSlash -> textInjector.insertSpace()
+            ScribbleGesture.Text -> serviceScope.launch {
                 recognizer.recognize(listOf(stroke))?.let { textInjector.insertText(it) }
             }
         }
@@ -194,8 +160,8 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
     ).apply { gravity = Gravity.TOP or Gravity.START }
 
     private fun triggerLayoutParams() = WindowManager.LayoutParams(
-        settingsState.value.triggerSizeDp.dp,
-        settingsState.value.triggerSizeDp.dp,
+        72.dp,
+        72.dp,
         WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
         PixelFormat.TRANSLUCENT,

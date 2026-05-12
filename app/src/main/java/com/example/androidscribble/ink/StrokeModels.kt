@@ -3,17 +3,11 @@ package com.example.androidscribble.ink
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import com.example.androidscribble.settings.ScribbleSettings
 import kotlin.math.abs
 import kotlin.math.hypot
 
-/** A sampled pointer coordinate plus timestamp/pressure used by rendering and Digital Ink recognition. */
-data class InkPoint(
-    val x: Float,
-    val y: Float,
-    val t: Long,
-    val pressure: Float = 1f,
-)
+/** A sampled pointer coordinate plus timestamp used by Digital Ink recognition. */
+data class InkPoint(val x: Float, val y: Float, val t: Long)
 
 data class InkStroke(
     val points: List<InkPoint>,
@@ -30,20 +24,16 @@ data class ActiveStroke(
 object StrokeSmoother {
     fun begin(stroke: ActiveStroke, point: InkPoint) {
         stroke.points.clear()
-        stroke.points += point.copy(pressure = point.pressure.coerceIn(MIN_PRESSURE, MAX_PRESSURE))
+        stroke.points += point
         stroke.path.reset()
         stroke.path.moveTo(point.x, point.y)
     }
 
-    fun append(stroke: ActiveStroke, point: InkPoint, settings: ScribbleSettings = ScribbleSettings()) {
+    fun append(stroke: ActiveStroke, point: InkPoint) {
         val previous = stroke.points.lastOrNull() ?: return begin(stroke, point)
-        val distance = hypot((point.x - previous.x).toDouble(), (point.y - previous.y).toDouble()).toFloat()
-        if (distance < settings.minPointDistancePx) return
-        val sampledPoint = point.copy(
-            pressure = estimatePressure(previous, point, distance, settings).coerceIn(MIN_PRESSURE, MAX_PRESSURE),
-        )
-        stroke.points += sampledPoint
-        val mid = Offset((previous.x + sampledPoint.x) / 2f, (previous.y + sampledPoint.y) / 2f)
+        if (hypot((point.x - previous.x).toDouble(), (point.y - previous.y).toDouble()) < 1.5) return
+        stroke.points += point
+        val mid = Offset((previous.x + point.x) / 2f, (previous.y + point.y) / 2f)
         stroke.path.quadraticBezierTo(previous.x, previous.y, mid.x, mid.y)
     }
 
@@ -52,17 +42,6 @@ object StrokeSmoother {
         stroke.path.lineTo(last.x, last.y)
         return InkStroke(stroke.points.toList(), Path().apply { addPath(stroke.path) }, stroke.color)
     }
-
-    private fun estimatePressure(previous: InkPoint, current: InkPoint, distance: Float, settings: ScribbleSettings): Float {
-        if (!settings.pressureEnabled) return 1f
-        val elapsedMs = (current.t - previous.t).coerceAtLeast(1L).toFloat()
-        val pxPerMs = distance / elapsedMs
-        val speedPressure = (1.25f - pxPerMs * 0.28f).coerceIn(MIN_PRESSURE, MAX_PRESSURE)
-        return previous.pressure * (1f - settings.pressureResponse) + speedPressure * settings.pressureResponse
-    }
-
-    private const val MIN_PRESSURE = 0.35f
-    private const val MAX_PRESSURE = 1.75f
 }
 
 enum class ScribbleGesture { ScratchDelete, CircleSelect, VerticalSlash, Text }

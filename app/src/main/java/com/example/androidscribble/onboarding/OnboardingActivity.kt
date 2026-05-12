@@ -28,7 +28,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.getSystemService
-import com.example.androidscribble.settings.SettingsActivity
 
 class OnboardingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,11 +66,8 @@ private fun OnboardingScreen(activity: Activity) {
                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
-                PermissionCard("6. Configuration Menu", "Tune pressure, ink, gestures, recognition, overlay behavior, and symbol-to-emoji training.") {
-                    activity.startActivity(Intent(activity, SettingsActivity::class.java))
-                }
                 Spacer(Modifier.height(8.dp))
-                Text("After enabling Accessibility, tap the floating pen. Dimmed means pass-through mode; bright means writing mode is intercepting strokes. Long-press the pen for settings.")
+                Text("After enabling Accessibility, tap the floating pen. Dimmed means pass-through mode; bright means writing mode is intercepting strokes.")
             }
         }
     }
