@@ -13,6 +13,7 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.TextView
+import android.widget.Toast
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.Lifecycle
@@ -31,6 +32,7 @@ import com.example.androidscribble.ink.ScribbleGesture
 import com.example.androidscribble.ml.CorrectionRepository
 import com.example.androidscribble.ml.CustomDictionary
 import com.example.androidscribble.ml.ScribbleRecognizer
+import com.example.androidscribble.ml.ScribbleRecognizer.ModelDownloadException
 import com.example.androidscribble.ui.ScribbleCanvasOverlay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +74,7 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
         addCanvasOverlay()
         addTriggerButton()
         setWritingMode(false)
+        prepareRecognitionModel()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
@@ -142,6 +145,14 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
         windowManager.updateViewLayout(canvasView, canvasLayoutParams(touchable = enabled))
     }
 
+    private fun prepareRecognitionModel() {
+        serviceScope.launch {
+            if (!recognizer.ensureModelDownloaded()) {
+                showRecognitionUnavailableMessage(recognizer.modelDownloadErrorMessage)
+            }
+        }
+    }
+
     private fun handleStroke(stroke: InkStroke) {
         when (GestureClassifier.classify(stroke)) {
             ScribbleGesture.ScratchDelete -> {
@@ -175,9 +186,13 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
         val strokesToRecognize = pendingTextStrokes.toList()
         if (strokesToRecognize.isEmpty()) return
 
-        recognizer.recognize(strokesToRecognize)?.let { recognizedText ->
-            textInjector.insertText(recognizedText)
-            pendingTextStrokes.clear()
+        try {
+            recognizer.recognize(strokesToRecognize)?.let { recognizedText ->
+                textInjector.insertText(recognizedText)
+                pendingTextStrokes.clear()
+            }
+        } catch (exception: ModelDownloadException) {
+            showRecognitionUnavailableMessage(exception.message)
         }
     }
 
@@ -185,6 +200,14 @@ class ScribbleAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
         pendingTextCommitJob?.cancel()
         pendingTextCommitJob = null
         pendingTextStrokes.clear()
+    }
+
+    private fun showRecognitionUnavailableMessage(message: String?) {
+        Toast.makeText(
+            this,
+            message ?: ScribbleRecognizer.MODEL_DOWNLOAD_UNAVAILABLE_MESSAGE,
+            Toast.LENGTH_LONG,
+        ).show()
     }
 
     private fun canvasLayoutParams(touchable: Boolean) = WindowManager.LayoutParams(

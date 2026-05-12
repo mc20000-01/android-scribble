@@ -25,10 +25,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.getSystemService
+import com.example.androidscribble.ml.CorrectionRepository
+import com.example.androidscribble.ml.CustomDictionary
+import com.example.androidscribble.ml.ScribbleRecognizer
 import com.example.androidscribble.settings.LearningActivity
+import kotlinx.coroutines.launch
 
 class OnboardingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,6 +51,36 @@ class OnboardingActivity : ComponentActivity() {
 private fun OnboardingScreen(activity: Activity) {
     val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     val mediaProjectionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
+    val recognizer = remember(activity) { ScribbleRecognizer(CustomDictionary(activity), CorrectionRepository(activity)) }
+    val coroutineScope = rememberCoroutineScope()
+    var modelStatus by remember { mutableStateOf("Checking handwriting recognition model…") }
+    var isModelDownloading by remember { mutableStateOf(false) }
+
+    fun downloadModel() {
+        if (isModelDownloading) return
+        isModelDownloading = true
+        modelStatus = "Downloading handwriting recognition model…"
+        coroutineScope.launch {
+            val downloaded = recognizer.ensureModelDownloaded()
+            isModelDownloading = false
+            modelStatus = if (downloaded) {
+                "Handwriting recognition model is ready."
+            } else {
+                "Model download failed: ${recognizer.modelDownloadErrorMessage ?: ScribbleRecognizer.MODEL_DOWNLOAD_UNAVAILABLE_MESSAGE}"
+            }
+        }
+    }
+
+    LaunchedEffect(recognizer) {
+        isModelDownloading = true
+        val downloaded = recognizer.ensureModelDownloaded()
+        isModelDownloading = false
+        modelStatus = if (downloaded) {
+            "Handwriting recognition model is ready."
+        } else {
+            "Model download failed: ${recognizer.modelDownloadErrorMessage ?: ScribbleRecognizer.MODEL_DOWNLOAD_UNAVAILABLE_MESSAGE}"
+        }
+    }
 
     MaterialTheme {
         Surface(Modifier.fillMaxSize()) {
@@ -67,6 +107,11 @@ private fun OnboardingScreen(activity: Activity) {
                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
+                ModelDownloadCard(
+                    status = modelStatus,
+                    isDownloading = isModelDownloading,
+                    onDownloadClick = ::downloadModel,
+                )
                 PermissionCard("Custom terms and corrections", "Teach Android Scribble your vocabulary and review saved correction examples.") {
                     activity.startActivity(Intent(activity, LearningActivity::class.java))
                 }
@@ -84,6 +129,23 @@ private fun PermissionCard(title: String, description: String, onClick: () -> Un
             Text(title, style = MaterialTheme.typography.titleMedium)
             Text(description, style = MaterialTheme.typography.bodyMedium)
             Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text("Open") }
+        }
+    }
+}
+
+@Composable
+private fun ModelDownloadCard(status: String, isDownloading: Boolean, onDownloadClick: () -> Unit) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Handwriting recognition model", style = MaterialTheme.typography.titleMedium)
+            Text(status, style = MaterialTheme.typography.bodyMedium)
+            Button(
+                onClick = onDownloadClick,
+                enabled = !isDownloading,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (isDownloading) "Downloading…" else "Download / retry")
+            }
         }
     }
 }
